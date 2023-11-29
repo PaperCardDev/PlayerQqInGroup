@@ -1,12 +1,11 @@
 package cn.paper_card.player_qq_in_group;
 
-import cn.paper_card.database.DatabaseApi;
-import cn.paper_card.database.DatabaseConnection;
+import cn.paper_card.database.api.DatabaseApi;
+import cn.paper_card.database.api.Util;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.event.player.AsyncPlayerPreLoginEvent;
-import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -22,24 +21,27 @@ import java.util.List;
 public final class PlayerQqInGroup extends JavaPlugin implements PlayerQqInGroupApi {
 
     private final @NotNull Object connectionLock = new Object();
-    private DatabaseConnection connection = null;
+    private Connection connection = null;
     private Table table = null;
 
-    private @NotNull DatabaseConnection getConnection() throws Exception {
-        if (this.connection == null) {
-            final Plugin database = this.getServer().getPluginManager().getPlugin("Database");
-            if (database instanceof final DatabaseApi api) {
-                this.connection = api.connectUnimportant();
-            } else throw new Exception("Database插件未安装！");
-        }
-        return this.connection;
-    }
 
     private @NotNull Table getTable() throws Exception {
         if (this.table == null) {
-            this.table = new Table(this.getConnection().getConnection());
+            this.table = new Table(this.connection);
         }
         return this.table;
+    }
+
+    @Override
+    public void onLoad() {
+        final DatabaseApi api = this.getServer().getServicesManager().load(DatabaseApi.class);
+        if (api == null) throw new RuntimeException("无法连接到" + DatabaseApi.class.getSimpleName());
+
+        try {
+            this.connection = api.getLocalSQLite().connectUnimportant();
+        } catch (SQLException e) {
+            this.getSLF4JLogger().error("connect to sqlite", e);
+        }
     }
 
     @Override
@@ -248,11 +250,11 @@ public final class PlayerQqInGroup extends JavaPlugin implements PlayerQqInGroup
 
         private void create(@NotNull Connection connection) throws SQLException {
             final String sql = "CREATE TABLE IF NOT EXISTS %s (qq INTEGER NOT NULL, state INTEGER NOT NULL)".formatted(NAME);
-            DatabaseConnection.createTable(connection, sql);
+            Util.executeSQL(connection, sql);
         }
 
         void close() throws SQLException {
-            DatabaseConnection.closeAllStatements(this.getClass(), this);
+            Util.closeAllStatements(this.getClass(), this);
         }
 
         int insert(long qq, boolean inGroup) throws SQLException {
